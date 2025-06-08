@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Fitness Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Harmony -->
+    <!-- Application Structure Plan: The SPA is designed as a task-oriented dashboard. The default view is "Today's Plan," immediately showing the user their workout for the current date, which is their most frequent task. A top-level navigation allows switching to a "Full Schedule" calendar view for planning, a "Nutrition Guide" for dietary reference, and a "Mindset & Recovery" section for motivation and tips. This structure was chosen over a linear document to prioritize the user's immediate needs, making daily engagement frictionless while keeping supplementary information organized and accessible. User flow is centered on daily check-ins, with easy navigation to broader planning and reference materials. -->
+    <!-- Visualization & Content Choices: 
+        - Monthly Milestones -> Goal: Inform -> Presentation: Styled Text with Progress Bar -> Interaction: Progress bar updates based on current date -> Justification: Provides a clear, high-level overview of the 3-month journey. Implemented with HTML/CSS/JS.
+        - Daily Workout Schedule -> Goal: Organize/Inform -> Presentation: Interactive Daily View -> Interaction: Users can navigate dates; exercises are presented as a checklist -> Justification: This is the core interactive component, turning a passive plan into an active daily guide. Implemented with JS logic.
+        - Nutrition Macros -> Goal: Compare/Inform -> Viz: Donut Chart -> Interaction: Hover tooltips show macro details -> Justification: Visually represents target macronutrient distribution for quick comprehension. Implemented with Chart.js.
+        - All Textual Content (Tips, Recovery) -> Goal: Inform -> Presentation: Card-based layout -> Interaction: Accessed via main navigation tabs -> Justification: Organizes detailed information into clean, readable, and easily navigable sections. Implemented with HTML/Tailwind.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8F7F4; /* Warm neutral background */
+            color: #434242; /* Dark Gray for text */
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-button.active {
+            border-bottom-color: #C87941; /* Muted Terracotta Accent */
+            color: #C87941;
+        }
+        .nav-button:hover {
+            color: #C87941;
+        }
+        .card {
+            background-color: #FFFFFF;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.3s ease;
+        }
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s ease;
+        }
+        .checklist-item:hover {
+            background-color: #F1F1F1;
+        }
+        .checklist-item input[type="checkbox"] {
+            display: none;
+        }
+        .checklist-item .custom-checkbox {
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid #D1D5DB;
+            border-radius: 0.25rem;
+            margin-right: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+        .checklist-item .custom-checkbox .checkmark {
+            display: none;
+            color: #FFFFFF;
+        }
+        .checklist-item input[type="checkbox"]:checked + .custom-checkbox {
+            background-color: #22C55E; /* Green for completion */
+            border-color: #22C55E;
+        }
+        .checklist-item input[type="checkbox"]:checked + .custom-checkbox .checkmark {
+            display: block;
+        }
+        .checklist-item span {
+            transition: color 0.2s ease;
+        }
+        .checklist-item input[type="checkbox"]:checked ~ span {
+            text-decoration: line-through;
+            color: #9CA3AF;
+        }
+        .date-nav-button {
+            background-color: #E7E6E1; /* Muted Green-Gray */
+            color: #434242;
+        }
+        .date-nav-button:hover {
+            background-color: #DCDAD5;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 350px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 40vh;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="app" class="container mx-auto p-4 md:p-6 lg:p-8 max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-[#434242]">Your 3-Month Fitness Journey</h1>
+            <p class="mt-2 text-lg text-gray-600">An interactive guide to a stronger, faster you.</p>
+        </header>
+
+        <main>
+            <div class="card p-4 mb-8">
+                <h2 class="text-xl font-bold text-center mb-4">Monthly Focus Milestones</h2>
+                <div id="milestones-container" class="flex flex-col md:flex-row justify-around gap-4 text-center"></div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 mt-4">
+                    <div id="progress-bar" class="bg-[#C87941] h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <nav class="flex justify-center border-b-2 border-gray-200 mb-8 space-x-4 md:space-x-8">
+                <button data-tab="today" class="nav-button p-4 text-lg font-semibold">Today's Plan</button>
+                <button data-tab="schedule" class="nav-button p-4 text-lg font-semibold">Full Schedule</button>
+                <button data-tab="nutrition" class="nav-button p-4 text-lg font-semibold">Nutrition Guide</button>
+                <button data-tab="mindset" class="nav-button p-4 text-lg font-semibold">Mindset & Recovery</button>
+            </nav>
+
+            <div id="tab-content">
+                <!-- Content will be injected by JavaScript -->
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const app = {
+                state: {
+                    currentDate: new Date('2025-06-09T00:00:00'), // Start date of the plan
+                    activeTab: 'today',
+                },
+                
+                planData: {
+                    milestones: {
+                        'June': 'Build habit + base strength, learn form.',
+                        'July': 'Increase intensity & volume, focus on speed and muscle tone.',
+                        'August': 'Push performance — endurance, speed, and physique.',
+                    },
+                    workouts: {
+                        'Strength & Toning': {
+                            title: 'Strength & Toning (Full Body)',
+                            icon: '🏋️‍♂️',
+                            details: [
+                                { type: 'header', text: 'Warm-Up (5 min)' },
+                                { type: 'item', text: 'Skipping rope (2 min)' },
+                                { type: 'item', text: 'Arm circles, leg swings, jumping jacks' },
+                                { type: 'header', text: 'Circuit (Repeat 2–3x)' },
+                                { type: 'item', text: 'Push-ups (with bar if preferred) – 10–12 reps' },
+                                { type: 'item', text: 'Resistance band squats – 15 reps' },
+                                { type: 'item', text: 'Resistance band rows – 12 reps' },
+                                { type: 'item', text: 'Resistance band shoulder press – 12 reps' },
+                                { type: 'item', text: 'Glute bridges – 15 reps' },
+                                { type: 'item', text: 'Plank – 30–60 sec' },
+                                { type: 'header', text: 'Cooldown (5 min)' },
+                                { type: 'item', text: 'Stretching (focus on legs, chest, shoulders)' },
+                            ]
+                        },
+                        'Cardio + Mobility': {
+                            title: 'Cardio + Mobility',
+                            icon: '🏃‍♀️',
+                            details: [
+                                { 
+                                    type: 'options', 
+                                    options: {
+                                        'Option 1: Outdoor Run': [
+                                            { type: 'item', text: '30 min steady pace run' },
+                                        ],
+                                        'Option 2: HIIT': [
+                                            { type: 'header', text: 'HIIT (30 min): 30 sec work / 15 sec rest x 4 rounds' },
+                                            { type: 'item', text: 'High knees' },
+                                            { type: 'item', text: 'Mountain climbers' },
+                                            { type: 'item', text: 'Burpees' },
+                                            { type: 'item', text: 'Skater jumps' },
+                                            { type: 'item', text: 'Jump rope' },
+                                        ]
+                                    }
+                                },
+                                { type: 'header', text: 'Mobility (10–15 min)' },
+                                { type: 'item', text: 'Dynamic stretches + foam rolling (if available)' },
+                            ]
+                        },
+                        'Endurance + Core': {
+                            title: 'Endurance Challenge + Core',
+                            icon: '⚡',
+                            details: [
+                                { type: 'header', text: 'Endurance (20 min)' },
+                                { type: 'item', text: 'Run: 10 min moderate pace + 5 sprint intervals (30 sec sprint + 1 min walk)' },
+                                { type: 'header', text: 'Core (3 rounds)' },
+                                { type: 'item', text: 'Leg raises – 15 reps' },
+                                { type: 'item', text: 'Russian twists – 20 reps (each side)' },
+                                { type: 'item', text: 'Bicycle crunches – 20 reps' },
+                                { type: 'item', text: 'Plank – 1 min' },
+                                { type: 'header', text: 'Cooldown (5 min)' },
+                                { type: 'item', text: 'General stretching' },
+                            ]
+                        },
+                        'Active Recovery': {
+                            title: 'Active Recovery',
+                            icon: '🧘‍♀️',
+                            details: [
+                                { type: 'header', text: 'Relax and Recharge' },
+                                { type: 'item', text: 'Gentle yoga/stretching (e.g., Yoga With Adriene)' },
+                                { type: 'item', text: '20–30 min walk or light cycling' },
+                            ]
+                        }
+                    },
+                    weeklySchedule: [ // 0 = Sunday, 1 = Monday, etc.
+                        'Active Recovery',
+                        'Strength & Toning',
+                        'Cardio + Mobility',
+                        'Strength & Toning',
+                        'Cardio + Mobility',
+                        'Strength & Toning',
+                        'Endurance + Core'
+                    ]
+                },
+
+                init() {
+                    this.setupEventListeners();
+                    this.renderMilestones();
+                    this.updateProgressBar();
+                    this.render();
+                },
+                
+                setupEventListeners() {
+                    const navButtons = document.querySelectorAll('.nav-button');
+                    navButtons.forEach(button => {
+                        button.addEventListener('click', () => {
+                            this.state.activeTab = button.dataset.tab;
+                            this.render();
+                        });
+                    });
+                },
+
+                render() {
+                    this.updateNav();
+                    const contentEl = document.getElementById('tab-content');
+                    contentEl.innerHTML = '';
+
+                    switch(this.state.activeTab) {
+                        case 'today':
+                            contentEl.innerHTML = this.renderTodayView();
+                            this.setupDateNav();
+                            this.setupChecklists();
+                            break;
+                        case 'schedule':
+                            contentEl.innerHTML = this.renderScheduleView();
+                            this.setupScheduleInteractions();
+                            break;
+                        case 'nutrition':
+                            contentEl.innerHTML = this.renderNutritionView();
+                            this.renderNutritionChart();
+                            break;
+                        case 'mindset':
+                            contentEl.innerHTML = this.renderMindsetView();
+                            break;
+                    }
+                },
+                
+                updateNav() {
+                    const navButtons = document.querySelectorAll('.nav-button');
+                    navButtons.forEach(button => {
+                        button.classList.toggle('active', button.dataset.tab === this.state.activeTab);
+                    });
+                },
+
+                renderMilestones() {
+                    const container = document.getElementById('milestones-container');
+                    const currentMonth = this.state.currentDate.getMonth(); // 5 for June, 6 for July, 7 for August
+                    
+                    Object.entries(this.planData.milestones).forEach(([month, desc], index) => {
+                        const monthIndex = 5 + index; // June is 5
+                        const isActive = currentMonth === monthIndex;
+                        const milestoneEl = document.createElement('div');
+                        milestoneEl.className = `p-2 rounded-lg ${isActive ? 'bg-[#E7E6E1]' : ''}`;
+                        milestoneEl.innerHTML = `
+                            <h3 class="font-bold text-lg">${month}</h3>
+                            <p class="text-sm text-gray-600">${desc}</p>
+                        `;
+                        container.appendChild(milestoneEl);
+                    });
+                },
+
+                updateProgressBar() {
+                    const startDate = new Date('2025-06-01');
+                    const endDate = new Date('2025-08-31');
+                    const totalDuration = endDate.getTime() - startDate.getTime();
+                    const elapsedDuration = this.state.currentDate.getTime() - startDate.getTime();
+                    const progress = Math.min(100, Math.max(0, (elapsedDuration / totalDuration) * 100));
+                    document.getElementById('progress-bar').style.width = `${progress}%`;
+                },
+
+                formatDate(date) {
+                    return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                },
+
+                getWorkoutForDate(date) {
+                    const dayOfWeek = date.getDay();
+                    const workoutName = this.planData.weeklySchedule[dayOfWeek];
+                    return this.planData.workouts[workoutName];
+                },
+
+                renderWorkoutDetails(workout) {
+                    let html = '';
+                    workout.details.forEach(detail => {
+                        if (detail.type === 'header') {
+                            html += `<h4 class="text-lg font-semibold mt-4 mb-2">${detail.text}</h4>`;
+                        } else if (detail.type === 'item') {
+                            const id = `item-${Math.random().toString(36).substr(2, 9)}`;
+                            html += `
+                                <label for="${id}" class="checklist-item">
+                                    <input type="checkbox" id="${id}">
+                                    <div class="custom-checkbox">
+                                        <span class="checkmark">✔</span>
+                                    </div>
+                                    <span class="ml-3">${detail.text}</span>
+                                </label>
+                            `;
+                        } else if (detail.type === 'options') {
+                            html += `<div class="mt-4" data-logic="tabs">`;
+                            const optionKeys = Object.keys(detail.options);
+                            html += `<div class="flex border-b">`;
+                            optionKeys.forEach((key, index) => {
+                                html += `<button data-tab-id="${index}" class="tab-button p-2 font-medium ${index === 0 ? 'border-b-2 border-[#C87941]' : ''}">${key}</button>`;
+                            });
+                            html += `</div>`;
+                            optionKeys.forEach((key, index) => {
+                                html += `<div data-content-id="${index}" class="tab-content py-2 ${index > 0 ? 'hidden' : ''}">`;
+                                html += this.renderWorkoutDetails({ details: detail.options[key] });
+                                html += `</div>`;
+                            });
+                            html += `</div>`;
+                        }
+                    });
+                    return html;
+                },
+
+                renderTodayView() {
+                    const workout = this.getWorkoutForDate(this.state.currentDate);
+                    return `
+                        <div class="text-center mb-6">
+                            <h2 class="text-3xl font-bold">${this.formatDate(this.state.currentDate)}</h2>
+                            <div class="flex justify-center items-center gap-4 mt-4">
+                                <button id="prev-day" class="date-nav-button font-bold py-2 px-4 rounded-full">← Prev</button>
+                                <button id="go-to-today" class="date-nav-button font-bold py-2 px-4 rounded-lg">Go to Today</button>
+                                <button id="next-day" class="date-nav-button font-bold py-2 px-4 rounded-full">Next →</button>
+                            </div>
+                        </div>
+                        <div class="card p-6">
+                            <div class="flex items-center mb-4">
+                                <span class="text-4xl mr-4">${workout.icon}</span>
+                                <h3 class="text-2xl font-bold">${workout.title}</h3>
+                            </div>
+                            <div id="workout-details">
+                                ${this.renderWorkoutDetails(workout)}
+                            </div>
+                        </div>
+                    `;
+                },
+
+                setupDateNav() {
+                    document.getElementById('prev-day').addEventListener('click', () => {
+                        this.state.currentDate.setDate(this.state.currentDate.getDate() - 1);
+                        this.render();
+                    });
+                    document.getElementById('next-day').addEventListener('click', () => {
+                        this.state.currentDate.setDate(this.state.currentDate.getDate() + 1);
+                        this.render();
+                    });
+                    document.getElementById('go-to-today').addEventListener('click', () => {
+                        this.state.currentDate = new Date();
+                        // For demonstration, let's keep it within the plan's timeframe
+                        if (this.state.currentDate < new Date('2025-06-01') || this.state.currentDate > new Date('2025-08-31')) {
+                            this.state.currentDate = new Date('2025-06-09T00:00:00');
+                        }
+                        this.render();
+                    });
+                },
+
+                setupChecklists() {
+                    const tabContainers = document.querySelectorAll('[data-logic="tabs"]');
+                    tabContainers.forEach(container => {
+                        const tabButtons = container.querySelectorAll('.tab-button');
+                        const tabContents = container.querySelectorAll('.tab-content');
+                        tabButtons.forEach(button => {
+                            button.addEventListener('click', () => {
+                                const tabId = button.dataset.tabId;
+                                tabButtons.forEach(btn => btn.classList.remove('border-b-2', 'border-[#C87941]'));
+                                button.classList.add('border-b-2', 'border-[#C87941]');
+                                tabContents.forEach(content => {
+                                    content.classList.toggle('hidden', content.dataset.contentId !== tabId);
+                                });
+                            });
+                        });
+                    });
+                },
+                
+                renderScheduleView() {
+                    const intro = `
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold">Full 3-Month Schedule</h2>
+                            <p class="mt-2 text-lg text-gray-600">This section provides a complete calendar view of your workout plan. Click on any date to see the scheduled workout for that day. Use this to plan ahead or review past activities.</p>
+                        </div>
+                    `;
+                    let calendarHtml = '<div class="grid grid-cols-1 md:grid-cols-3 gap-6">';
+                    ['June', 'July', 'August'].forEach((monthName, i) => {
+                        const monthIndex = 5 + i;
+                        calendarHtml += `<div class="card p-4">
+                            <h3 class="text-xl font-bold text-center mb-4">${monthName} 2025</h3>
+                            ${this.renderMonth(2025, monthIndex)}
+                        </div>`;
+                    });
+                    calendarHtml += '</div>';
+                    return intro + calendarHtml;
+                },
+
+                renderMonth(year, month) {
+                    let html = `<div class="grid grid-cols-7 gap-1 text-center text-sm font-semibold mb-2">
+                        <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+                    </div>`;
+                    html += `<div class="grid grid-cols-7 gap-1 text-center">`;
+                    const date = new Date(year, month, 1);
+                    const firstDay = date.getDay();
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                    for (let i = 0; i < firstDay; i++) {
+                        html += `<div></div>`;
+                    }
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const currentDate = new Date(year, month, day);
+                        const workoutName = this.planData.weeklySchedule[currentDate.getDay()];
+                        const workout = this.planData.workouts[workoutName];
+                        html += `<div class="p-2 rounded-full cursor-pointer hover:bg-[#E7E6E1]" title="${workout.title}" data-date="${currentDate.toISOString()}">
+                            ${workout.icon} <span class="block text-xs">${day}</span>
+                        </div>`;
+                    }
+                    html += `</div>`;
+                    return html;
+                },
+
+                setupScheduleInteractions() {
+                    const dayElements = document.querySelectorAll('[data-date]');
+                    dayElements.forEach(el => {
+                        el.addEventListener('click', () => {
+                            this.state.currentDate = new Date(el.dataset.date);
+                            this.state.activeTab = 'today';
+                            this.render();
+                        });
+                    });
+                },
+
+                renderNutritionView() {
+                    return `
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold">Nutrition Guide</h2>
+                            <p class="mt-2 text-lg text-gray-600">Proper nutrition is crucial for energy, muscle repair, and achieving a toned physique. This guide provides a framework for your dietary approach, focusing on balanced macros and mindful eating habits.</p>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Macros Focus</h3>
+                                <div class="chart-container mb-6">
+                                    <canvas id="macroChart"></canvas>
+                                </div>
+                                <div class="space-y-4">
+                                    <div><strong class="text-[#067A46]">Protein (40%):</strong> For muscle building & repair. Aim for ~1.6g per kg body weight.<br><em class="text-gray-600">Sources: Eggs, chicken, fish, paneer, tofu, lentils, Greek yogurt.</em></div>
+                                    <div><strong class="text-[#C87941]">Carbs (40%):</strong> For energy. Focus on complex carbs.<br><em class="text-gray-600">Sources: Oats, brown rice, sweet potatoes, whole wheat, fruits.</em></div>
+                                    <div><strong class="text-[#A26746]">Fats (20%):</strong> For hormonal balance.<br><em class="text-gray-600">Sources: Nuts, seeds, olive oil, ghee, avocados.</em></div>
+                                </div>
+                            </div>
+                            <div class="space-y-6">
+                                <div class="card p-6">
+                                    <h3 class="text-xl font-bold mb-4">Sample Meal Timing</h3>
+                                    <ul class="list-disc list-inside space-y-2">
+                                        <li><strong>Pre-workout (30–60 mins before):</strong> Banana + handful of nuts or toast with peanut butter.</li>
+                                        <li><strong>Post-workout (within 1 hour):</strong> 2 eggs + toast + fruit or a protein smoothie.</li>
+                                        <li><strong>Main meals:</strong> A balanced plate of protein, veggies, and a whole-grain carb.</li>
+                                        <li><strong>Hydration:</strong> Aim for 2.5–3 liters of water daily.</li>
+                                    </ul>
+                                </div>
+                                <div class="card p-6">
+                                    <h3 class="text-xl font-bold mb-4">Eating Out Tips</h3>
+                                    <ul class="list-disc list-inside space-y-2">
+                                        <li>Prioritize grilled, steamed, or baked over fried.</li>
+                                        <li>Choose high-protein dishes (e.g., tandoori, kebabs, grilled fish).</li>
+                                        <li>Limit sugar-sweetened drinks and desserts.</li>
+                                        <li>Be mindful of portion sizes.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
+
+                renderNutritionChart() {
+                    const ctx = document.getElementById('macroChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Protein', 'Carbohydrates', 'Fats'],
+                            datasets: [{
+                                label: 'Macro Split',
+                                data: [40, 40, 20],
+                                backgroundColor: [
+                                    '#067A46', // Dark Green
+                                    '#C87941', // Muted Terracotta
+                                    '#A26746'  // Earthy Brown
+                                ],
+                                borderColor: '#F8F7F4',
+                                borderWidth: 4,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Target Macronutrient Split'
+                                }
+                            }
+                        }
+                    });
+                },
+
+                renderMindsetView() {
+                    return `
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold">Mindset & Recovery</h2>
+                            <p class="mt-2 text-lg text-gray-600">Consistency is built on a strong mindset and smart recovery. These strategies will help you stay motivated, build lasting habits, and allow your body to adapt and grow stronger.</p>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Track Progress Weekly</h3>
+                                <ul class="list-disc list-inside space-y-2">
+                                    <li>Take weekly progress photos to see visual changes.</li>
+                                    <li>Log your reps, weight used, and workout times.</li>
+                                    <li>Note your energy levels and sleep quality.</li>
+                                </ul>
+                            </div>
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Gamify Your Routine</h3>
+                                <ul class="list-disc list-inside space-y-2">
+                                    <li>Use a habit tracker app or a simple journal.</li>
+                                    <li>Reward your consistency each week, not just the results.</li>
+                                    <li>Set small, achievable mini-milestones for each month.</li>
+                                </ul>
+                            </div>
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Accountability</h3>
+                                <ul class="list-disc list-inside space-y-2">
+                                    <li>Share your goals with a supportive friend or family member.</li>
+                                    <li>Post weekly updates if you're comfortable, to create external motivation.</li>
+                                </ul>
+                            </div>
+                            <div class="card p-6 md:col-span-2 lg:col-span-3">
+                                <h3 class="text-xl font-bold mb-4">❤️ Recovery is Key</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div><strong class="block">Sleep:</strong> Aim for 7–9 hours per night. This is when your muscles repair and grow.</div>
+                                    <div><strong class="block">Rest Days:</strong> Schedule one full rest day or a light active recovery day every week.</div>
+                                    <div><strong class="block">Listen to Your Body:</strong> Don’t train muscles that are intensely sore. Light movement is fine, but avoid heavy lifting.</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            };
+
+            app.init();
+        });
+    </script>
+</body>
+</html>
