@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,6 +10,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Harmony -->
+    <!-- Application Structure Plan: The SPA is designed as a task-oriented dashboard. The default view is "Today's Plan," immediately showing the user their workout for the current date, which is their most frequent task. A top-level navigation allows switching to a "Full Schedule" calendar view for planning, a "Nutrition Guide" for dietary reference, and a "Mindset & Recovery" section for motivation and tips. This structure was chosen over a linear document to prioritize the user's immediate needs, making daily engagement frictionless while keeping supplementary information organized and accessible. User flow is centered on daily check-ins, with easy navigation to broader planning and reference materials. -->
+    <!-- Visualization & Content Choices: 
+        - Monthly Milestones -> Goal: Inform -> Presentation: Styled Text with Progress Bar -> Interaction: Progress bar updates based on current date -> Justification: Provides a clear, high-level overview of the 3-month journey. Implemented with HTML/CSS/JS.
+        - Daily Workout Schedule -> Goal: Organize/Inform -> Presentation: Interactive Daily View -> Interaction: Users can navigate dates; exercises are presented as a checklist -> Justification: This is the core interactive component, turning a passive plan into an active daily guide. Implemented with JS logic.
+        - Nutrition Macros -> Goal: Compare/Inform -> Viz: Donut Chart -> Interaction: Hover tooltips show macro details -> Justification: Visually represents target macronutrient distribution for quick comprehension. Implemented with Chart.js.
+        - All Textual Content (Tips, Recovery) -> Goal: Inform -> Presentation: Card-based layout -> Interaction: Accessed via main navigation tabs -> Justification: Organizes detailed information into clean, readable, and easily navigable sections. Implemented with HTML/Tailwind.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -92,17 +102,6 @@
             height: 350px;
             max-height: 40vh;
         }
-        #user-id-display {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            background-color: rgba(0,0,0,0.5);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            z-index: 1000;
-        }
     </style>
 </head>
 <body class="antialiased">
@@ -132,35 +131,16 @@
                 <!-- Content will be injected by JavaScript -->
             </div>
         </main>
-        <div id="user-id-display" style="display: none;"></div>
     </div>
 
-    <script type="module">
-        // Firebase Imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+    <script>
         document.addEventListener('DOMContentLoaded', () => {
             const app = {
-                // --- STATE ---
                 state: {
                     currentDate: new Date('2025-06-09T00:00:00'), // Start date of the plan
                     activeTab: 'today',
-                    checkedItems: {}, // Will be populated from Firestore
-                    isAuthReady: false,
-                    userId: null,
-                },
-
-                // --- FIREBASE ---
-                fb: {
-                    app: null,
-                    auth: null,
-                    db: null,
-                    checkedItemsUnsubscribe: null,
                 },
                 
-                // --- STATIC PLAN DATA ---
                 planData: {
                     milestones: {
                         'June': 'Build habit + base strength, learn form.',
@@ -236,111 +216,24 @@
                         }
                     },
                     weeklySchedule: [ // 0 = Sunday, 1 = Monday, etc.
-                        'Active Recovery', 'Strength & Toning', 'Cardio + Mobility', 'Strength & Toning',
-                        'Cardio + Mobility', 'Strength & Toning', 'Endurance + Core'
+                        'Active Recovery',
+                        'Strength & Toning',
+                        'Cardio + Mobility',
+                        'Strength & Toning',
+                        'Cardio + Mobility',
+                        'Strength & Toning',
+                        'Endurance + Core'
                     ]
                 },
 
-                // --- INITIALIZATION ---
-                async init() {
+                init() {
                     this.setupEventListeners();
-                    await this.initFirebase(); // Initialize Firebase and authenticate
-                    // Initial render happens after auth is ready via onAuthStateChanged
+                    this.renderMilestones();
+                    this.updateProgressBar();
+                    this.render();
                 },
                 
-                async initFirebase() {
-                    try {
-                        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                        if (!firebaseConfig) {
-                            console.error("Firebase config not found.");
-                            return;
-                        }
-                        this.fb.app = initializeApp(firebaseConfig);
-                        this.fb.db = getFirestore(this.fb.app);
-                        this.fb.auth = getAuth(this.fb.app);
-
-                        onAuthStateChanged(this.fb.auth, async (user) => {
-                            if (user) {
-                                this.state.userId = user.uid;
-                                this.state.isAuthReady = true;
-                                console.log("User authenticated with UID:", this.state.userId);
-                                this.attachFirestoreListener();
-                                this.displayUserId();
-                            } else {
-                                try {
-                                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                        await signInWithCustomToken(this.fb.auth, __initial_auth_token);
-                                    } else {
-                                        await signInAnonymously(this.fb.auth);
-                                    }
-                                } catch (error) {
-                                    console.error("Error signing in:", error);
-                                }
-                            }
-                        });
-                    } catch (error) {
-                        console.error("Firebase initialization failed:", error);
-                    }
-                },
-
-                // --- FIRESTORE DATA HANDLING ---
-                attachFirestoreListener() {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    // FIX: The path must have an even number of segments to point to a document.
-                    // We'll create a collection 'progressData' and a document 'checkedItems' inside it.
-                    const docRef = doc(this.fb.db, `artifacts/${appId}/users/${this.state.userId}/progressData/checkedItems`);
-
-                    this.fb.checkedItemsUnsubscribe = onSnapshot(docRef, (docSnap) => {
-                        if (docSnap.exists()) {
-                            this.state.checkedItems = docSnap.data();
-                        } else {
-                            this.state.checkedItems = {};
-                        }
-                        // Initial render or re-render when data changes
-                        this.renderOnceReady(); 
-                    }, (error) => {
-                        console.error("Error listening to Firestore:", error);
-                        this.renderOnceReady(); // Render even if listener fails
-                    });
-                },
-
-                renderOnceReady() {
-                    // This function ensures we only do the initial render once auth and data are ready
-                    if (!this.initialRenderDone) {
-                        this.renderMilestones();
-                        this.updateProgressBar();
-                        this.render();
-                        this.initialRenderDone = true;
-                    } else {
-                        // For subsequent updates, just re-render the main content
-                        this.render();
-                    }
-                },
-                
-                async updateCheckedItem(itemId, isChecked) {
-                    if (!this.state.isAuthReady || !this.state.userId) return;
-                    
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    // FIX: Use the same corrected path here.
-                    const docRef = doc(this.fb.db, `artifacts/${appId}/users/${this.state.userId}/progressData/checkedItems`);
-                    
-                    const updatedData = { ...this.state.checkedItems };
-                    if (isChecked) {
-                        updatedData[itemId] = true;
-                    } else {
-                        delete updatedData[itemId]; // More efficient than storing 'false'
-                    }
-                    
-                    try {
-                        await setDoc(docRef, updatedData); // No merge needed, we're setting the whole object
-                    } catch (error) {
-                        console.error("Error updating Firestore:", error);
-                    }
-                },
-                
-                // --- UI & EVENT HANDLING ---
                 setupEventListeners() {
-                    // Main navigation
                     const navButtons = document.querySelectorAll('.nav-button');
                     navButtons.forEach(button => {
                         button.addEventListener('click', () => {
@@ -348,31 +241,9 @@
                             this.render();
                         });
                     });
-                    
-                    // Event delegation for checkboxes
-                    document.getElementById('tab-content').addEventListener('change', (e) => {
-                        if (e.target.type === 'checkbox' && e.target.dataset.itemId) {
-                            const itemId = e.target.dataset.itemId;
-                            const isChecked = e.target.checked;
-                            this.updateCheckedItem(itemId, isChecked);
-                        }
-                    });
-                },
-                
-                displayUserId() {
-                    const displayEl = document.getElementById('user-id-display');
-                    if(displayEl && this.state.userId) {
-                        displayEl.textContent = `User ID: ${this.state.userId}`;
-                        displayEl.style.display = 'block';
-                    }
                 },
 
-                // --- RENDERING LOGIC ---
                 render() {
-                    if (!this.state.isAuthReady) {
-                        document.getElementById('tab-content').innerHTML = '<p class="text-center">Initializing and loading your data...</p>';
-                        return;
-                    }
                     this.updateNav();
                     const contentEl = document.getElementById('tab-content');
                     contentEl.innerHTML = '';
@@ -406,15 +277,17 @@
 
                 renderMilestones() {
                     const container = document.getElementById('milestones-container');
-                    container.innerHTML = '';
-                    const currentMonth = this.state.currentDate.getMonth();
+                    const currentMonth = this.state.currentDate.getMonth(); // 5 for June, 6 for July, 7 for August
                     
                     Object.entries(this.planData.milestones).forEach(([month, desc], index) => {
                         const monthIndex = 5 + index; // June is 5
                         const isActive = currentMonth === monthIndex;
                         const milestoneEl = document.createElement('div');
                         milestoneEl.className = `p-2 rounded-lg ${isActive ? 'bg-[#E7E6E1]' : ''}`;
-                        milestoneEl.innerHTML = `<h3 class="font-bold text-lg">${month}</h3><p class="text-sm text-gray-600">${desc}</p>`;
+                        milestoneEl.innerHTML = `
+                            <h3 class="font-bold text-lg">${month}</h3>
+                            <p class="text-sm text-gray-600">${desc}</p>
+                        `;
                         container.appendChild(milestoneEl);
                     });
                 },
@@ -435,56 +308,42 @@
                 getWorkoutForDate(date) {
                     const dayOfWeek = date.getDay();
                     const workoutName = this.planData.weeklySchedule[dayOfWeek];
-                    return { ...this.planData.workouts[workoutName], name: workoutName };
+                    return this.planData.workouts[workoutName];
                 },
 
-                // Generate a stable, unique ID for each checklist item
-                generateItemId(workoutName, dateStr, itemText, index) {
-                    const cleanText = itemText.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
-                    return `${dateStr}-${workoutName.replace(/\s+/g, '-')}-${index}-${cleanText}`;
-                },
-
-                renderWorkoutDetails(workout, date) {
+                renderWorkoutDetails(workout) {
                     let html = '';
-                    let itemIndex = 0;
-                    
-                    const renderItemsRecursive = (details) => {
-                        let innerHtml = '';
-                        details.forEach(detail => {
-                            if (detail.type === 'header') {
-                                innerHtml += `<h4 class="text-lg font-semibold mt-4 mb-2">${detail.text}</h4>`;
-                            } else if (detail.type === 'item') {
-                                const dateStr = date.toISOString().split('T')[0];
-                                const id = this.generateItemId(workout.name, dateStr, detail.text, itemIndex);
-                                const isChecked = this.state.checkedItems[id] ? 'checked' : '';
-                                innerHtml += `
-                                    <label for="${id}" class="checklist-item">
-                                        <input type="checkbox" id="${id}" data-item-id="${id}" ${isChecked}>
-                                        <div class="custom-checkbox"><span class="checkmark">✔</span></div>
-                                        <span class="ml-3">${detail.text}</span>
-                                    </label>
-                                `;
-                                itemIndex++;
-                            } else if (detail.type === 'options') {
-                                innerHtml += `<div class="mt-4" data-logic="tabs">`;
-                                const optionKeys = Object.keys(detail.options);
-                                innerHtml += `<div class="flex border-b">`;
-                                optionKeys.forEach((key, index) => {
-                                    innerHtml += `<button data-tab-id="${index}" class="tab-button p-2 font-medium ${index === 0 ? 'border-b-2 border-[#C87941]' : ''}">${key}</button>`;
-                                });
-                                innerHtml += `</div>`;
-                                optionKeys.forEach((key, index) => {
-                                    innerHtml += `<div data-content-id="${index}" class="tab-content py-2 ${index > 0 ? 'hidden' : ''}">`;
-                                    innerHtml += renderItemsRecursive(detail.options[key]);
-                                    innerHtml += `</div>`;
-                                });
-                                innerHtml += `</div>`;
-                            }
-                        });
-                        return innerHtml;
-                    };
-
-                    return renderItemsRecursive(workout.details);
+                    workout.details.forEach(detail => {
+                        if (detail.type === 'header') {
+                            html += `<h4 class="text-lg font-semibold mt-4 mb-2">${detail.text}</h4>`;
+                        } else if (detail.type === 'item') {
+                            const id = `item-${Math.random().toString(36).substr(2, 9)}`;
+                            html += `
+                                <label for="${id}" class="checklist-item">
+                                    <input type="checkbox" id="${id}">
+                                    <div class="custom-checkbox">
+                                        <span class="checkmark">✔</span>
+                                    </div>
+                                    <span class="ml-3">${detail.text}</span>
+                                </label>
+                            `;
+                        } else if (detail.type === 'options') {
+                            html += `<div class="mt-4" data-logic="tabs">`;
+                            const optionKeys = Object.keys(detail.options);
+                            html += `<div class="flex border-b">`;
+                            optionKeys.forEach((key, index) => {
+                                html += `<button data-tab-id="${index}" class="tab-button p-2 font-medium ${index === 0 ? 'border-b-2 border-[#C87941]' : ''}">${key}</button>`;
+                            });
+                            html += `</div>`;
+                            optionKeys.forEach((key, index) => {
+                                html += `<div data-content-id="${index}" class="tab-content py-2 ${index > 0 ? 'hidden' : ''}">`;
+                                html += this.renderWorkoutDetails({ details: detail.options[key] });
+                                html += `</div>`;
+                            });
+                            html += `</div>`;
+                        }
+                    });
+                    return html;
                 },
 
                 renderTodayView() {
@@ -504,7 +363,7 @@
                                 <h3 class="text-2xl font-bold">${workout.title}</h3>
                             </div>
                             <div id="workout-details">
-                                ${this.renderWorkoutDetails(workout, this.state.currentDate)}
+                                ${this.renderWorkoutDetails(workout)}
                             </div>
                         </div>
                     `;
@@ -520,10 +379,11 @@
                         this.render();
                     });
                     document.getElementById('go-to-today').addEventListener('click', () => {
-                        let today = new Date();
-                        this.state.currentDate = (today < new Date('2025-06-01') || today > new Date('2025-08-31')) 
-                            ? new Date('2025-06-09T00:00:00') 
-                            : today;
+                        this.state.currentDate = new Date();
+                        // For demonstration, let's keep it within the plan's timeframe
+                        if (this.state.currentDate < new Date('2025-06-01') || this.state.currentDate > new Date('2025-08-31')) {
+                            this.state.currentDate = new Date('2025-06-09T00:00:00');
+                        }
                         this.render();
                     });
                 },
@@ -546,11 +406,15 @@
                     });
                 },
                 
-                // --- Other view rendering functions (unchanged) ---
                 renderScheduleView() {
-                    const intro = `...`; // Same as before
+                    const intro = `
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold">Full 3-Month Schedule</h2>
+                            <p class="mt-2 text-lg text-gray-600">This section provides a complete calendar view of your workout plan. Click on any date to see the scheduled workout for that day. Use this to plan ahead or review past activities.</p>
+                        </div>
+                    `;
                     let calendarHtml = '<div class="grid grid-cols-1 md:grid-cols-3 gap-6">';
-                     ['June', 'July', 'August'].forEach((monthName, i) => {
+                    ['June', 'July', 'August'].forEach((monthName, i) => {
                         const monthIndex = 5 + i;
                         calendarHtml += `<div class="card p-4">
                             <h3 class="text-xl font-bold text-center mb-4">${monthName} 2025</h3>
@@ -562,17 +426,25 @@
                 },
 
                 renderMonth(year, month) {
-                    let html = `<div class="grid grid-cols-7 gap-1 text-center text-sm font-semibold mb-2"><div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div></div>`;
+                    let html = `<div class="grid grid-cols-7 gap-1 text-center text-sm font-semibold mb-2">
+                        <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+                    </div>`;
                     html += `<div class="grid grid-cols-7 gap-1 text-center">`;
                     const date = new Date(year, month, 1);
                     const firstDay = date.getDay();
                     const daysInMonth = new Date(year, month + 1, 0).getDate();
-                    for (let i = 0; i < firstDay; i++) { html += `<div></div>`; }
+
+                    for (let i = 0; i < firstDay; i++) {
+                        html += `<div></div>`;
+                    }
+
                     for (let day = 1; day <= daysInMonth; day++) {
                         const currentDate = new Date(year, month, day);
                         const workoutName = this.planData.weeklySchedule[currentDate.getDay()];
                         const workout = this.planData.workouts[workoutName];
-                        html += `<div class="p-2 rounded-full cursor-pointer hover:bg-[#E7E6E1]" title="${workout.title}" data-date="${currentDate.toISOString()}">${workout.icon} <span class="block text-xs">${day}</span></div>`;
+                        html += `<div class="p-2 rounded-full cursor-pointer hover:bg-[#E7E6E1]" title="${workout.title}" data-date="${currentDate.toISOString()}">
+                            ${workout.icon} <span class="block text-xs">${day}</span>
+                        </div>`;
                     }
                     html += `</div>`;
                     return html;
@@ -589,16 +461,124 @@
                     });
                 },
 
-                renderNutritionView() { return `...`; /* Same as before */ },
-                renderNutritionChart() { /* Same as before */ },
-                renderMindsetView() { return `...`; /* Same as before */ },
-            };
-            
-            // Helper stubs for brevity in this example
-            app.renderScheduleView = () => '<p class="text-center p-4">Full schedule view is available.</p>';
-            app.renderNutritionView = () => '<p class="text-center p-4">Nutrition guide is available.</p>';
-            app.renderMindsetView = () => '<p class="text-center p-4">Mindset & Recovery tips are available.</p>';
+                renderNutritionView() {
+                    return `
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold">Nutrition Guide</h2>
+                            <p class="mt-2 text-lg text-gray-600">Proper nutrition is crucial for energy, muscle repair, and achieving a toned physique. This guide provides a framework for your dietary approach, focusing on balanced macros and mindful eating habits.</p>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Macros Focus</h3>
+                                <div class="chart-container mb-6">
+                                    <canvas id="macroChart"></canvas>
+                                </div>
+                                <div class="space-y-4">
+                                    <div><strong class="text-[#067A46]">Protein (40%):</strong> For muscle building & repair. Aim for ~1.6g per kg body weight.<br><em class="text-gray-600">Sources: Eggs, chicken, fish, paneer, tofu, lentils, Greek yogurt.</em></div>
+                                    <div><strong class="text-[#C87941]">Carbs (40%):</strong> For energy. Focus on complex carbs.<br><em class="text-gray-600">Sources: Oats, brown rice, sweet potatoes, whole wheat, fruits.</em></div>
+                                    <div><strong class="text-[#A26746]">Fats (20%):</strong> For hormonal balance.<br><em class="text-gray-600">Sources: Nuts, seeds, olive oil, ghee, avocados.</em></div>
+                                </div>
+                            </div>
+                            <div class="space-y-6">
+                                <div class="card p-6">
+                                    <h3 class="text-xl font-bold mb-4">Sample Meal Timing</h3>
+                                    <ul class="list-disc list-inside space-y-2">
+                                        <li><strong>Pre-workout (30–60 mins before):</strong> Banana + handful of nuts or toast with peanut butter.</li>
+                                        <li><strong>Post-workout (within 1 hour):</strong> 2 eggs + toast + fruit or a protein smoothie.</li>
+                                        <li><strong>Main meals:</strong> A balanced plate of protein, veggies, and a whole-grain carb.</li>
+                                        <li><strong>Hydration:</strong> Aim for 2.5–3 liters of water daily.</li>
+                                    </ul>
+                                </div>
+                                <div class="card p-6">
+                                    <h3 class="text-xl font-bold mb-4">Eating Out Tips</h3>
+                                    <ul class="list-disc list-inside space-y-2">
+                                        <li>Prioritize grilled, steamed, or baked over fried.</li>
+                                        <li>Choose high-protein dishes (e.g., tandoori, kebabs, grilled fish).</li>
+                                        <li>Limit sugar-sweetened drinks and desserts.</li>
+                                        <li>Be mindful of portion sizes.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
 
+                renderNutritionChart() {
+                    const ctx = document.getElementById('macroChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Protein', 'Carbohydrates', 'Fats'],
+                            datasets: [{
+                                label: 'Macro Split',
+                                data: [40, 40, 20],
+                                backgroundColor: [
+                                    '#067A46', // Dark Green
+                                    '#C87941', // Muted Terracotta
+                                    '#A26746'  // Earthy Brown
+                                ],
+                                borderColor: '#F8F7F4',
+                                borderWidth: 4,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Target Macronutrient Split'
+                                }
+                            }
+                        }
+                    });
+                },
+
+                renderMindsetView() {
+                    return `
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold">Mindset & Recovery</h2>
+                            <p class="mt-2 text-lg text-gray-600">Consistency is built on a strong mindset and smart recovery. These strategies will help you stay motivated, build lasting habits, and allow your body to adapt and grow stronger.</p>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Track Progress Weekly</h3>
+                                <ul class="list-disc list-inside space-y-2">
+                                    <li>Take weekly progress photos to see visual changes.</li>
+                                    <li>Log your reps, weight used, and workout times.</li>
+                                    <li>Note your energy levels and sleep quality.</li>
+                                </ul>
+                            </div>
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Gamify Your Routine</h3>
+                                <ul class="list-disc list-inside space-y-2">
+                                    <li>Use a habit tracker app or a simple journal.</li>
+                                    <li>Reward your consistency each week, not just the results.</li>
+                                    <li>Set small, achievable mini-milestones for each month.</li>
+                                </ul>
+                            </div>
+                            <div class="card p-6">
+                                <h3 class="text-xl font-bold mb-4">Accountability</h3>
+                                <ul class="list-disc list-inside space-y-2">
+                                    <li>Share your goals with a supportive friend or family member.</li>
+                                    <li>Post weekly updates if you're comfortable, to create external motivation.</li>
+                                </ul>
+                            </div>
+                            <div class="card p-6 md:col-span-2 lg:col-span-3">
+                                <h3 class="text-xl font-bold mb-4">❤️ Recovery is Key</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div><strong class="block">Sleep:</strong> Aim for 7–9 hours per night. This is when your muscles repair and grow.</div>
+                                    <div><strong class="block">Rest Days:</strong> Schedule one full rest day or a light active recovery day every week.</div>
+                                    <div><strong class="block">Listen to Your Body:</strong> Don’t train muscles that are intensely sore. Light movement is fine, but avoid heavy lifting.</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            };
 
             app.init();
         });
